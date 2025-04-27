@@ -1,13 +1,13 @@
 # Programmieren (HKA Verkehrssystemmanagement), SS 2025
 # Gruppe: Arsalan, Ilja, Janusz, Ufuk
-# Projekt: TODO NAME (Code 2/2)
+# Projekt: Verkehrsflüsse Karlsruhe (Code 2/2)
 
 import csv
 import requests
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import holoviews as hv    # "pip install holoviews" ausführen (ohne "")
+import holoviews as hv    # vor dem Ausführen des Codes "pip install holoviews" ausführen (ohne "")
 import folium
 from folium.plugins import HeatMap, HeatMapWithTime
 from bokeh.plotting import show    # siehe unten
@@ -36,32 +36,28 @@ def main():
     print("Zähle Wege im Wegetagebuch nach Start- und Zielviertel...")
     wegetagebuchdf = pd.read_csv("wegetagebuch_karlsruhe.csv")
 
-    count_combinations = wegetagebuchdf.groupby(['Startviertel', 'Zielviertel']).size().reset_index(name='Value').sort_values(by='Value', ascending=False).head(40)    # .groupby() + .size() für Vorkommen von Kombinationen (2D), reset_index() für DataFrame als Return
+    count_combinations = wegetagebuchdf.groupby(['Startviertel', 'Zielviertel']).size().reset_index(name='Value').sort_values(by='Value', ascending=False).head(40)    # .groupby() + .size() für Vorkommen von Kombinationen (2D), reset_index() damit ein DataFrame returnt wird
+    # .head(40) für Ausschließen aller Relationen, die nicht Teil der Top 40 sind
 
     # jetzt nochmal getrennt für die Heatmap...
     dfzusammen = pd.concat([wegetagebuchdf['Startviertel'], wegetagebuchdf['Zielviertel']])
     count_viertelwege = dfzusammen.value_counts().reset_index(name='Wegeanzahl')
     count_viertelwege['Lat'] = count_viertelwege['index'].apply(findlatitude)    # keine Schleife/Argument benötigt, Pandas-apply macht das automatisch
     count_viertelwege['Lon'] = count_viertelwege['index'].apply(findlongitude)
-    count_viertelwege.drop(columns=['index'], inplace=True)    # Entfernen von unbrauchbaren Spalten für Folium
-    count_viertelwege = count_viertelwege[['Lat', 'Lon', 'Wegeanzahl']]    # Sortieren der Spalten für Folium
+    count_viertelwege.drop(columns=['index'], inplace=True)    # Entfernen von unbrauchbaren Spalten für Folium-Heatmap-Funktion
+    count_viertelwege = count_viertelwege[['Lat', 'Lon', 'Wegeanzahl']]    # Sortieren der Spalten für Folium-Heatmap-Funktion
     # print(count_viertelwege)    # debug
     
     print("Zähle Wege im Wegetagebuch nach anderen Kriterien...")
-    # Zähle Wege im Wegetagebuch nach Verkehrsmittel (Gruppierung, Verkehrsmittelmix für Bericht + Ergebnisgrafik=ModalSplit)
-    count_verkehrsmittel = wegetagebuchdf['Verkehrsmittel'].value_counts().reset_index(name='Wegeanzahl')    # value_counts (wie in Pandas-Dokumentation) bei 1D
+    # Zähle Wege im Wegetagebuch nach Verkehrsmittel (wenig überraschend bei zufällig generierten Werten)
+    count_verkehrsmittel = wegetagebuchdf['Verkehrsmittel'].value_counts().reset_index(name='Wegeanzahl')    # value_counts, wo keine Kombinationen 
     # print(count_verkehrsmittel)    # debug
-
-    # Zähle zurückgelegte Wege nach Beruf (für Bericht)
+    # Zähle zurückgelegte Wege nach Beruf
     count_beruf = wegetagebuchdf['Beruf'].value_counts().reset_index(name='Wegeanzahl')
-    # Zähle Wege nach ZWECK (Gruppierung, für Ergebnisgrafik), der Vollständigkeit halber, wahrscheinlich wenig überraschend
+    # Zähle Wege nach Zweck, der Vollständigkeit halber
     count_zweck = wegetagebuchdf['Zweck'].value_counts().reset_index(name='Wegeanzahl')
-
     # Zähle Wege nach Zielviertel (für Bericht/Analyse)
     count_zielviertel = wegetagebuchdf['Zielviertel'].value_counts().reset_index(name='Wegeanzahl')
-
-    # punkte auf stadtteilen mit verschiedenen farben je nachdem wie oft als start- ODER zielort auf foliumkarte ergänzen (heatmap da pfeile nur wichtigste relationen zeigen)
-    # entfernung fixen (math.dist)
 
     # print(count_combinations)    # debug
 
@@ -79,20 +75,21 @@ def main():
     # Karte erstellen
     # https://medium.com/@vinodvidhole/interesting-heatmaps-using-python-folium-ee41b118a996
     print("Erstelle Karte...")
-    karte = folium.Map(location = [49.0140, 8.4043], zoom_start=12, tiles = "Cartodb Positron")    # Koordinaten: Karlsruhe Zentrum, andere tiles für höheren Kontrast
+    karte = folium.Map(location = [49.0140, 8.4043], zoom_start=12, tiles = "Cartodb Positron")    # Koordinaten sind das Zentrum von Karlsruhe, andere tiles als OSM gewählt für höheren Kontrast
     HeatMap(count_viertelwege, min_opacity=0.50, blur=25).add_to(karte)
 
+    # Einzeichnen der Top-40-Relationen
     for _, row in count_combinations.iterrows():    # auch wenn nach Zeile/row iteriert wird, braucht es 2 Dinger weil das DataFrame tabellenförmig ist
         folium.PolyLine(locations = [(findlatitude(row['Source']), findlongitude(row['Source'])), (findlatitude(row['Target']), findlongitude(row['Target']))], weight = row['Value'] / 20).add_to(karte)
 
     karte.save('Karte.html')
     print("Karte im Ordner des Codes generiert!")
 
-    # Öffne Chord-Diagramm
+    # Öffnen des Chord-Diagramms
     print("Öffne Chord-Diagramm...")
     show(hv.render(chorddiagramm))    # Befehl nötig damit HTML gespeichert und (bei VS Code) geöffnet wird
 
-    # Exportiere wichtigste Relationen als Tabelle (für Abgabe, Präsentation usw.)
+    # Exportieren der wichtigsten Relationen als Tabelle (für Abgabe, Präsentation usw.)
     print("Exportiere CSV-Dateien für Tabellen...")
     count_combinations = count_combinations.rename(columns={'Source': 'Startviertel', 'Target': 'Zielviertel', 'Value': 'Wegeanzahl'})
     count_combinations.to_csv("wichtigste_relationen.csv", index=False)    # index=False für keine Extraspalte mit Zeilennummer
@@ -100,6 +97,7 @@ def main():
     count_beruf.to_csv("beruf_split.csv", index=False)
     count_zweck.to_csv("zweck_split.csv", index=False)
     count_zielviertel.to_csv("zielviertel_split.csv", index=False)
+    
     print("Fertig!")
 
 # Main ausführen!
